@@ -1,0 +1,117 @@
+#!/system/bin/sh
+#
+# moves /data/app and /data/dalvik-cache to the sd ext partition
+# and create symbolic links to their new location.
+#
+
+BB="logwrapper busybox";
+ERR_LOG=/data/app2sd.log
+errors=0
+enable=1
+
+if [ -e /system/bin/log ];
+then
+    LOGI="log -p i -t app2sd --"
+    LOGE="log -p e -t app2sd --"
+else
+    LOGI=echo
+    LOGE=echo
+fi
+
+$LOGI "+++ App2SD started +++"
+
+if [ -e $ERR_LOG ];
+then
+    rm $ERR_LOG
+fi
+
+# first find mount directory for ext partition and verify it:
+SD_EXT_DIRECTORY=`busybox mount | busybox grep "sd.*type ext" | busybox cut -d " " -f 3`
+if [ ! -d "$SD_EXT_DIRECTORY" ];
+then
+    $LOGE "Invalid SD ext directory: $SD_EXT_DIRECTORY";
+    echo "Invalid SD ext directory: $SD_EXT_DIRECTORY" > $ERR_LOG
+    echo "Logging mounted devices for debugging:" >> $ERR_LOG
+    busybox mount >>$ERR_LOG 2>&1
+    errors=1
+    enable=0
+else
+    $LOGI "found SD ext partition at: $SD_EXT_DIRECTORY"
+fi
+
+# loop directories to be moved to SD:
+for ii in dalvik app private;
+do
+  dir=$ii
+  if [ "$ii" == "dalvik" ];
+  then
+      dir=dalvik-cache
+  elif [ "$ii" == "private" ];
+  then
+      dir=app-private
+  fi
+  src=/data/$dir
+  trg=$SD_EXT_DIRECTORY/$dir
+
+  # /data/.noapp2sd (or /data/.nodalvik2sd) disable the appropraite part:
+  if [ $enable -eq 0 -o -e /data/.no${ii}2sd ];
+  then
+      if [ $enable -ne 0 ];
+      then
+          $LOGI "/data/.no${ii}2sd exists, skipped ${ii}2sd..."
+      fi
+      # remove symbolic links if they are invalid:
+      if [ -h $src -a ! -e $src/. ];
+      then
+          $LOGI "Removing invalid symoblic link $src (to `busybox readlink $src`)"
+          busybox rm -f $src
+          busybox mkdir $src;
+      fi
+  else
+      # make sure target exists, create if necessary:
+      busybox mkdir -p $trg
+      if [ -d $trg ];
+      then
+          busybox chown 1000:1000 $trg
+          busybox chmod 771 $trg
+      else
+          $LOGI "warning: $trg is not a directory?!"
+      fi
+      if [ ! -e $trg/. ];
+      then
+          $LOGE "ERROR: failed to created $trg"
+          echo "ERROR: failed to created $trg" > $ERR_LOG
+          errors=1
+      elif [ -h $src -a "`busybox readlink $src`" == "$trg" ];
+      then
+          # nothing to do already linked correctly :D
+      else
+          # if source exists, move files to target:
+          if [ -e $src/. ];
+          then
+              $LOGI "$src already exists, moving files to $trg"
+              busybox mv $src/* $trg/
+          fi
+          if [ -h $src ];
+          then
+              $LOGI "$src already linked to `busybox readlink $src`, changing to $trg"
+          fi
+          # finally, create new links:
+          busybox rm -rf $src
+          busybox ln -s $trg $src;
+          if [ ! -h $src ];
+          then
+              $LOGI "ERROR: failed to symbolic link $src"
+              echo "ERROR: failed to symbolic link $src" > $ERR_LOG
+              errors=1
+          fi
+      fi
+  fi
+done
+
+if [ $errors -gt 0 ];
+then
+    $LOGE "--- App2SD completed with errors! ---"
+else
+    $LOGI "--- App2SD completed successfully! ---"
+fi
