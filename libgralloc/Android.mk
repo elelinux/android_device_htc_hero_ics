@@ -29,9 +29,9 @@ LOCAL_SRC_FILES := 	\
 	framebuffer.cpp \
 	mapper.cpp
 	
-LOCAL_MODULE := gralloc.hero
+LOCAL_MODULE := gralloc.$(TARGET_BOOTLOADER_BOARD_NAME)
 LOCAL_MODULE_TAGS := optional
-LOCAL_CFLAGS:= -DLOG_TAG=\"gralloc\"
+LOCAL_CFLAGS:= -DLOG_TAG=\"gralloc.$(TARGET_BOOTLOADER_BOARD_NAME)\"
 include $(BUILD_SHARED_LIBRARY)
 
 endif

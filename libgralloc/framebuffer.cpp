@@ -95,7 +95,7 @@ static int fb_post(struct framebuffer_device_t* dev, buffer_handle_t buffer)
     private_handle_t const* hnd = reinterpret_cast<private_handle_t const*>(buffer);
     private_module_t* m = reinterpret_cast<private_module_t*>(
             dev->common.module);
-    
+
     if (hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER) {
         const size_t offset = hnd->base - m->framebuffer->base;
         m->info.activate = FB_ACTIVATE_VBL;
@@ -216,12 +216,16 @@ int mapFrameBufferLocked(struct private_module_t* module)
     if (ioctl(fd, FBIOGET_VSCREENINFO, &info) == -1)
         return -errno;
 
-    int refreshRate = 1000000000000000LLU /
+    uint64_t  refreshQuotient =
     (
             uint64_t( info.upper_margin + info.lower_margin + info.yres )
             * ( info.left_margin  + info.right_margin + info.xres )
             * info.pixclock
     );
+
+    /* Beware, info.pixclock might be 0 under emulation, so avoid a
+     * division-by-0 here (SIGFPE on ARM) */
+    int refreshRate = refreshQuotient > 0 ? (int)(1000000000000000LLU / refreshQuotient) : 0;
 
     if (refreshRate == 0) {
         // bleagh, bad info from the driver
@@ -302,7 +306,6 @@ int mapFrameBufferLocked(struct private_module_t* module)
         return -errno;
     }
     module->framebuffer->base = intptr_t(vaddr);
-
     memset(vaddr, 0, fbSize);
     return 0;
 }
